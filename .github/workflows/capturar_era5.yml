@@ -1,0 +1,47 @@
+name: Capturar reanálisis ERA5 (viento + presión)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '17 8 * * 1'   # semanal: agrega los días nuevos (ERA5 llega con ~5 días de atraso)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: captura-era5
+  cancel-in-progress: false
+
+jobs:
+  capturar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180     # la primera corrida baja ~10 años x 8 puntos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install requests
+
+      - name: Capturar ERA5
+        id: cap
+        run: python capturar_era5.py
+        continue-on-error: true
+
+      # Se guarda lo que se haya bajado aunque algún año/punto haya fallado
+      - name: Guardar resultado en el repo
+        run: |
+          git config user.name 'era5-bot'
+          git config user.email 'bot@users.noreply.github.com'
+          git add data/
+          if ! git diff --staged --quiet; then
+            git commit -m 'Reanálisis ERA5 actualizado'
+            git pull --rebase
+            git push
+          fi
+
+      - name: Fallar si hubo errores
+        if: steps.cap.outcome == 'failure'
+        run: exit 1
